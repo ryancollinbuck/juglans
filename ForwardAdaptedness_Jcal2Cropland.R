@@ -13,6 +13,26 @@ cd project-vlsork/Juglans/trimmedFastqs/MarkedDuplicates/vcfs_bychr/Analyses/Jca
 
 
 
+# =============================================================================
+# ForwardAdaptedness_Jcal2Cropland.R
+# "Forward" genomic offset: how well-adapted is J. californica to future
+# conditions at current walnut cropland locations in California?
+#
+# Same workflow as ForwardAdaptedness_Jhin2Cropland.R but uses J. californica
+# adaptive outlier SNPs and sample coordinates.
+#
+# Approach:
+#   1. Load RDA-identified adaptive outlier SNPs for J. californica.
+#   2. Impute missing genotypes (modal allele, parallel apply).
+#   3. Extract current climate at sample coordinates via terra.
+#   4. Train Gradient Forest (GF) on genotype × climate.
+#   5. For each future scenario (CNRM & HadGEM2 × RCP4.5/8.5 × 2040-69/2070-99):
+#      a. Mask future climate to CDL walnut cropland pixels.
+#      b. GF-predict current (donor) and future (recipient) climate.
+#      c. Compute average recipient offset (mean Euclidean distance in GF space).
+#      d. Write offset raster to GeoTIFF.
+# =============================================================================
+
 SUBsnp <- read.table("/u/home/r/rcbuck/project-vlsork/Juglans/trimmedFastqs/MarkedDuplicates/vcfs_bychr/JcalONLY_RDAonly10p_LatxLonPC1_outliers_uncon_snp.forR", header = T, row.names = 1)
 library(parallel)
 cl<-makeCluster(detectCores())
