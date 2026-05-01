@@ -1,3 +1,22 @@
+# =============================================================================
+# JuglansAnalyses.R
+# Combined population genomics analyses for Juglans hindsii (J. hindsii) and
+# J. californica (J. californica), run on a HPC cluster.
+#
+# Workflow overview:
+#   1. VCF filtering & LD pruning (PLINK)
+#   2. Principal components analysis (PCA)
+#   3. ADMIXTURE (ancestry estimation)
+#   4. Gradient Forest (GF) — climate-genotype associations
+#   5. Redundancy analysis (RDA) + rdadapt — adaptive outlier SNP detection
+#   6. LFMM — latent factor mixed-model GEA
+#   7. Genomic offset mapping across future climate scenarios
+#   8. Moving-window / kriged genetic diversity (wingen / algatr)
+#   9. Isolation-by-distance (IBD) / Mantel tests
+#  10. Gene annotation — nearest-gene lookup via liftoff + bedtools
+#  11. Environmental sampling coverage (range vs sampled density plots)
+# =============================================================================
+
 ########################################################  ANALYSES  ###############################################
 qrsh -l h_rt=24:00:00,h_vmem=5G -pe shared 4
 module load gcc/10.2.0
@@ -11,6 +30,8 @@ module load pandoc/2.17.1.1
 cd project-vlsork/Juglans/trimmedFastqs/MarkedDuplicates/vcfs_bychr/Analyses
 
 
+# --- STEP 1: LD pruning and file format conversion (full dataset, 142 individuals) ---
+# indep-pairwise 50 10 0.1 = window 50 SNPs, step 10, r² threshold 0.1
 ###### Plink - make bed/bim files while filtering for LD######      === named "plinkBed.sh" ===
 module load plink
 plink --vcf meanDP5_genoDP5_MAF0.01_missing0.9.Juglans_jhin.repeatsOut.ef.vcf.gz --double-id --allow-extra-chr --set-missing-var-ids @:# --indep-pairwise 50 10 0.1 --out Juglansfiltered
@@ -21,6 +42,7 @@ plink --vcf meanDP5_genoDP5_MAF0.01_missing0.9.Juglans_jhin.repeatsOut.ef.vcf.gz
 #produced 596,513 SNPs #genotype rate 0.927 (after removing 0 ind =142 indv)
 
 
+# Remove two problematic Jcal samples before re-filtering (140 individuals remain)
 ##remove Jcal.S.SBO.10 and Jcal.S.SBO.16
 vcftools --gzvcf Juglans_jhin.repeatsOut.ef.vcf.gz --remove-indv Jcal.S.SBO.10 --remove-indv Jcal.S.SBO.16 --min-alleles 2 --max-alleles 2 --min-meanDP 5 --minDP 5 --max-missing 0.9 --maf 0.01 --recode --stdout | gzip -c > Jcal.S.SBO.10n16rem_meanDP5_genoDP5_MAF0.01_missing0.9.Juglans_jhin.repeatsOut.ef.vcf.gz
 
@@ -53,6 +75,7 @@ plink --vcf moreoutliersrem_meanDP5_genoDP5_MAF0.01_missing0.9.Juglans_jhin.repe
 #produced 389,867 SNPs #genotype rate 0.938 (after removing 23 ind = 119 indv)
 
 
+# --- Split dataset by species for species-specific analyses ---
 #####SPLIT BY SPECIES#######
 module load plink
 plink --vcf RIV3nSD33nA133remJhinONLY_meanDP5_genoDP5_MAF0.01_missing0.9.Juglans_jhin.repeatsOut.ef.vcf.gz --double-id --allow-extra-chr --set-missing-var-ids @:# --indep-pairwise 50 10 0.1 --out RIV3nSD33nA133rem_JhinONLY_filtered
@@ -72,8 +95,9 @@ plink --vcf SCA10nSON1nCON4nLA3n38nSD2n72remJcalONLY_meanDP5_genoDP5_MAF0.01_mis
 
 
 
+# --- Rename chromosomes from NCBI accession IDs to integers 1-16 ---
+# Required because ADMIXTURE and some R packages expect numeric chromosome names
 ###### Rename chromosomes ########
-sed -i.bak 's/CM084183\.1/1/g' Juglansfiltered.bim
 sed -i.bak 's/CM084184\.1/2/g' Juglansfiltered.bim
 sed -i.bak 's/CM084185\.1/3/g' Juglansfiltered.bim
 sed -i.bak 's/CM084186\.1/4/g' Juglansfiltered.bim
@@ -142,8 +166,8 @@ paste <(echo "ID" | cat - manyrem_Qdoufiltered_renamed_snp.012.indv) <(echo "" |
 rm header manyrem_Qdoufiltered_renamed_snp.temp
 
 
-####### admixture loop #######
-for i in {1..5}; do admixture --cv ~/project-vlsork/Juglans/trimmedFastqs/MarkedDuplicates/vcfs_bychr/outliersrem_Juglansfiltered.bed $i > ~/project-vlsork/Juglans/trimmedFastqs/MarkedDuplicates/vcfs_bychr/Analyses/outliersrem_Juglansfiltered.$i.log.out; done
+# --- STEP 3: ADMIXTURE — test K=1-5 and K=6-10, select best K by cross-validation error ---
+####### admixture loop ####### --cv ~/project-vlsork/Juglans/trimmedFastqs/MarkedDuplicates/vcfs_bychr/outliersrem_Juglansfiltered.bed $i > ~/project-vlsork/Juglans/trimmedFastqs/MarkedDuplicates/vcfs_bychr/Analyses/outliersrem_Juglansfiltered.$i.log.out; done
 grep -h CV ~/project-vlsork/Juglans/trimmedFastqs/MarkedDuplicates/vcfs_bychr/Analyses/outliersrem_Juglansfiltered.*log.out
 
 
@@ -153,6 +177,7 @@ grep -h CV ~/project-vlsork/Juglans/trimmedFastqs/MarkedDuplicates/vcfs_bychr/An
 
 
 
+# --- STEP 2: PCA in R — visualize population structure using PLINK eigenvectors ---
 ###PCA in R
 library(ggplot2)
 pca<-read.table("Juglansfiltered.eigenvec")
@@ -432,16 +457,11 @@ pRDAclim
 pRDAgeog
 pRDAstruct
 
+# --- STEP 5: Redundancy Analysis (RDA) — genotype-environment association ---
+# Population structure (PC1, lat, lon, lat×lon) included as Condition() to partial out
+# rdadapt() applies a Mahalanobis-distance test across RDA axes to identify outlier SNPs
 library(psych)
 library(vegan)
-library(readr)
-library(adegenet)
-library(parallel)
-library(robust)
-library(qvalue)
-library(ggplot2)
-library(dplyr)
-RDA_env_constrained <- rda(snp.imp ~ aet+awc+cwd+depth+pct_clay+ph+ppt_djf+ppt_jja+terrain+tmn+Condition(PC1+Latitude+Longitude+LatxLon),  data=Variables,parallel=TRUE)
 ggplot() +geom_line(aes(x=c(1:length(RDA_env_constrained$CCA$eig)), y=as.vector(RDA_env_constrained$CCA$eig)), linetype="dotted",size = 1.5, color="darkgrey") +geom_point(aes(x=c(1:length(RDA_env_constrained$CCA$eig)), y=as.vector(RDA_env_constrained$CCA$eig)), size = 3,color="darkgrey") +scale_x_discrete(name = "Ordination axes", limits=c(1:10)) +ylab("Inertia") +theme_bw()
 screeplot(RDA_env_constrained, main="Eigenvalues of constrained axes")
 #***************************************rdadapt function**************************************
@@ -542,6 +562,8 @@ points(sample_scores[,1], sample_scores[,2], col = group_colors[Variables$Group]
 
 
 
+# --- STEP 6: LFMM (Latent Factor Mixed Models) — alternative GEA using ridge regression ---
+# Climate PCs used as predictors; K=1 latent factor controls for population structure
 ####### LFMM ########
 ##https://bookdown.org/hhwagner1/LandGenCourse_book/WE_11.html
 library(psych)
@@ -781,6 +803,10 @@ rm header JcalONLY_RDAonly10p_LatxLonPC1_outliers_uncon_snp.temp
 
 
 
+# --- STEP 4 / 7: Gradient Forest (GF) + Genomic Offset ---
+# GF models genotype-climate relationships across adaptive outlier SNPs.
+# Genomic offset = Euclidean distance in GF-transformed climate space
+# between current (1981-2010) and future (CNRM/HadGEM2 RCP4.5/8.5, 2040-69 and 2070-99) conditions.
 ##back in R
 SUBsnp <- read.table("/u/home/r/rcbuck/project-vlsork/Juglans/trimmedFastqs/MarkedDuplicates/vcfs_bychr/JcalONLY_RDAonly10p_LatxLonPC1_outliers_uncon_snp.forR", header = T, row.names = 1)
 library(parallel)
@@ -1146,6 +1172,9 @@ writeRaster(mask, "JcalONLY_RDAonly10p_LatxLonPC1_outliers_con_GFgenOffset_8110_
 
 
 
+# --- STEP 8: Moving-window genetic diversity (wingen) + kriging ---
+# Calculates observed heterozygosity (Ho) and nucleotide diversity (pi) across
+# a spatial raster grid; kriging interpolates to smooth the diversity surface.
 ############### wingen ######################
 do_everything_for_me(liz_vcf, liz_coords, CA_env)
 library(algatr)
@@ -1636,6 +1665,9 @@ text(xpos, ypos, labels = eq, adj = c(1, 0), cex = 0.9)
 
 
 
+# --- STEP 10: Adaptive SNP gene annotation ---
+# Lifts J. regia gene models onto J. hindsii reference, then finds the nearest
+# gene to each adaptive outlier SNP using bedtools closest.
 ######### EXTRACT SNPS AND FUNCTION POSITIONS ##############
 module load conda
 conda activate liftoff_env
@@ -1688,13 +1720,11 @@ bedtools closest -a snps.sorted.bed -b JregiaReference.genes.bed -D a -t first >
 
 
 
+# --- STEP 11: Environmental coverage — compare sampled vs full-range climate space ---
+# Density plots confirm that sampled individuals represent the species' climatic breadth.
 library(terra)
 library(dplyr)
 library(ggplot2)
-
-
-library(readr)
-JCenv <- read_csv("/u/home/r/rcbuck/project-vlsork/Juglans/trimmedFastqs/MarkedDuplicates/vcfs_bychr/Analyses/JcalONLY_coordsforGF.csv")
 JCenv<-data.frame(JCenv)
 Coordinates<-subset(JCenv, select=c(x,y))
 Coordinates<-data.frame(Coordinates)
