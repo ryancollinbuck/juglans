@@ -1,14 +1,22 @@
+# =============================================================================
+# ReverseAdaptedness_Jhin2Walnuts.R
+# "Reverse" genomic offset: for each wild J. hindsii individual, how far is
+# its current climate from the future climate of walnut orchards?
+# This is the reverse perspective of ForwardAdaptedness — asking which
+# wild individuals are pre-adapted to conditions crop trees will experience.
+#
+# Approach:
+#   1. Load RDA adaptive outlier SNPs for J. hindsii; impute missing data.
+#   2. Extract current climate at J. hindsii sample coordinates.
+#   3. Train Gradient Forest (GF) on genotype × current climate.
+#   4. GF-transform current donor (wild sample) climate.
+#   5. For each future scenario (CNRM & HadGEM2 × RCP4.5/8.5 × 2040-69/2070-99):
+#      a. GF-predict future climate at walnut orchard (CDL) pixels.
+#      b. Compute average donor offset = mean Euclidean distance in GF space
+#         from each wild sample to all future orchard pixel climates.
+#      c. Write per-sample offset values and/or raster to output.
+# =============================================================================
 qrsh -l h_rt=24:00:00,h_vmem=25G -pe shared 10
-module load gcc/10.2.0
-module load gdal/3.1.3
-module load geos/3.11.1
-module load proj/7.1.1
-module load sqlite/3.33.0
-module load curl/8.4.0
-module load R/4.3.0
-module load pandoc/2.17.1.1
-module load cmake/3.30.0
-cd project-vlsork/Juglans/trimmedFastqs/MarkedDuplicates/vcfs_bychr/Analyses/JhinONLY/Jhin2Walnuts
 
 
 
