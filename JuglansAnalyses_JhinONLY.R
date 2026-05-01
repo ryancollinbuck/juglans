@@ -1,3 +1,19 @@
+# =============================================================================
+# JuglansAnalyses_JhinONLY.R
+# Population genomics analyses restricted to J. hindsii samples only.
+# Mirrors the structure of JuglansAnalyses.R but focuses on the 59-individual
+# J. hindsii dataset after removal of outlier individuals (RIV3, SD33, A133).
+#
+# Workflow:
+#   1. Chromosome renaming (PLINK .bim)
+#   2. ADMIXTURE ancestry estimation
+#   3. PCA (colored by latitude)
+#   4. Gradient Forest (GF) — climate-adaptive SNP associations
+#   5. RDA + rdadapt — adaptive outlier detection
+#   6. Genomic offset across future climate scenarios (CNRM / HadGEM2)
+#   7. Isolation-by-distance / Mantel tests
+# =============================================================================
+
 ########################################################  ANALYSES  ###############################################
 qrsh -l h_rt=24:00:00,h_vmem=10G -pe shared 4
 module load gcc/10.2.0
@@ -12,8 +28,8 @@ module load cmake/3.30.0
 cd project-vlsork/Juglans/trimmedFastqs/MarkedDuplicates/vcfs_bychr/Analyses/JhinONLY
 
 
+# --- Rename chromosomes from NCBI accessions to integers 1-16 ---
 ###### Rename chromosomes ########
-sed -i.bak 's/CM084183\.1/1/g'  RIV3nSD33nA133rem_JhinONLY_filtered.bim
 sed -i.bak 's/CM084184\.1/2/g'  RIV3nSD33nA133rem_JhinONLY_filtered.bim
 sed -i.bak 's/CM084185\.1/3/g'  RIV3nSD33nA133rem_JhinONLY_filtered.bim
 sed -i.bak 's/CM084186\.1/4/g'  RIV3nSD33nA133rem_JhinONLY_filtered.bim
@@ -31,14 +47,15 @@ sed -i.bak 's/CM084197\.1/15/g' RIV3nSD33nA133rem_JhinONLY_filtered.bim
 sed -i.bak 's/CM084198\.1/16/g' RIV3nSD33nA133rem_JhinONLY_filtered.bim
 
 
-####### admixture loop #######
-for i in {6..10}; do admixture --cv ~/project-vlsork/Juglans/trimmedFastqs/MarkedDuplicates/vcfs_bychr/RIV3nSD33nA133rem_JhinONLY_filtered.bed $i > ~/project-vlsork/Juglans/trimmedFastqs/MarkedDuplicates/vcfs_bychr/Analyses/RIV3nSD33nA133rem_JhinONLY_filtered.$i.log.out; done
+# --- ADMIXTURE: test K=6-10; grep CV error to select optimal K ---
+####### admixture loop ####### --cv ~/project-vlsork/Juglans/trimmedFastqs/MarkedDuplicates/vcfs_bychr/RIV3nSD33nA133rem_JhinONLY_filtered.bed $i > ~/project-vlsork/Juglans/trimmedFastqs/MarkedDuplicates/vcfs_bychr/Analyses/RIV3nSD33nA133rem_JhinONLY_filtered.$i.log.out; done
 grep -h CV ~/project-vlsork/Juglans/trimmedFastqs/MarkedDuplicates/vcfs_bychr/Analyses/RIV3nSD33nA133rem_JhinONLY_filtered.*log.out
 
 
 #rename samples in vcf to remove duplicate naming
 bcftools reheader -s Jhin_new_sample_names.txt -o RIV3nSD33nA133rem_JhinONLY_filtered_renamed.vcf RIV3nSD33nA133rem_JhinONLY_filtered.vcf
 
+# --- PCA: visualize genetic structure; points colored by latitude ---
 ###PCA in R
 library(ggplot2)
 pca<-read.table("RIV3nSD33nA133rem_JhinONLY_filtered.eigenvec")
