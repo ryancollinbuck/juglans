@@ -1,14 +1,23 @@
+# =============================================================================
+# ReverseAdaptedness_Jcal2Walnuts.R
+# "Reverse" genomic offset: for each wild J. californica individual, how far is
+# its current climate from the future climate of walnut orchards?
+# Identifies wild J. californica genotypes most pre-adapted to future orchard
+# conditions under each climate scenario.
+#
+# Same structure as ReverseAdaptedness_Jhin2Walnuts.R but using J. californica
+# adaptive outlier SNPs and sample coordinates.
+#
+# Approach:
+#   1. Load RDA adaptive outlier SNPs for J. californica; impute missing data.
+#   2. Extract current climate at J. californica sample coordinates.
+#   3. Train Gradient Forest (GF) on genotype × current climate.
+#   4. For each future scenario (CNRM & HadGEM2 × RCP4.5/8.5 × 2040-69/2070-99):
+#      a. GF-predict future climate at CDL walnut cropland pixels.
+#      b. Compute average donor offset for each wild sample to all orchard pixels.
+#      c. Write results to GeoTIFF raster.
+# =============================================================================
 qrsh -l h_rt=24:00:00,h_vmem=25G -pe shared 10
-module load gcc/10.2.0
-module load gdal/3.1.3
-module load geos/3.11.1
-module load proj/7.1.1
-module load sqlite/3.33.0
-module load curl/8.4.0
-module load R/4.3.0
-module load pandoc/2.17.1.1
-module load cmake/3.30.0
-cd project-vlsork/Juglans/trimmedFastqs/MarkedDuplicates/vcfs_bychr/Analyses/JcalONLY/Jcal2Walnuts
 
 
 
