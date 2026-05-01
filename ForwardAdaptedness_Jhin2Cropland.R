@@ -1,14 +1,21 @@
+# =============================================================================
+# ForwardAdaptedness_Jhin2Cropland.R
+# "Forward" genomic offset: how well-adapted is J. hindsii to future conditions
+# at current walnut cropland locations in California?
+#
+# Approach:
+#   1. Load RDA-identified adaptive outlier SNPs for J. hindsii.
+#   2. Impute missing genotypes with the most common allele (parallel apply).
+#   3. Extract current climate (1981-2010 Rose variables) at sample coordinates.
+#   4. Train a Gradient Forest (GF) model on genotype × climate.
+#   5. For each future scenario (CNRM & HadGEM2 × RCP4.5/8.5 × 2040-69/2070-99):
+#      a. Mask future climate raster to CDL-defined walnut cropland pixels.
+#      b. GF-predict both current (donor) and future (recipient) climate.
+#      c. Compute average recipient offset = mean Euclidean distance in GF space
+#         from each cropland pixel to all current J. hindsii sample locations.
+#      d. Write offset raster to GeoTIFF.
+# =============================================================================
 qrsh -l h_rt=24:00:00,h_vmem=25G -pe shared 10
-module load gcc/10.2.0
-module load gdal/3.1.3
-module load geos/3.11.1
-module load proj/7.1.1
-module load sqlite/3.33.0
-module load curl/8.4.0
-module load R/4.3.0
-module load pandoc/2.17.1.1
-module load cmake/3.30.0
-cd project-vlsork/Juglans/trimmedFastqs/MarkedDuplicates/vcfs_bychr/Analyses/JhinONLY/Jhin2Cropland
 
 
 
@@ -64,16 +71,14 @@ clim.points_8110 <- extract(ras_8110, sample.coord.sp)  #extracts the data for e
 clim.points_8110<-data.frame(clim.points_8110)
 
 
+# --- Step 4: Train Gradient Forest model on adaptive SNPs × current climate ---
 library(gradientForest)
-env.gf <- cbind(clim.points_8110[,-1])
-maxLevel <- log2(0.368*nrow(env.gf)/2)
-gf <- gradientForest(cbind(env.gf, SUBsnp.imp), predictor.vars=colnames(env.gf), response.vars=colnames(SUBsnp.imp), ntree=500, maxLevel=maxLevel, trace=T, corr.threshold=0.50)
 
-
-
-
-
-
+# --- Step 5: Compute average recipient offset to cropland pixels ---
+# Split rows into 100 chunks for parallel computation with doParallel/foreach.
+# rdist() computes pairwise Euclidean distances between GF-transformed future
+# cropland climate and GF-transformed current donor (J. hindsii sample) climate.
+# Mean across donors = average forward offset for each cropland pixel.
 #mask current clim by donor range, then GF predict across it
 library(adehabitatLT)
 library(extendedForest) 
